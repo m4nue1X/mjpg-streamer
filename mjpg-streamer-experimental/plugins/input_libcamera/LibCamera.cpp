@@ -42,14 +42,13 @@ void LibCamera::configureStill(uint32_t width, uint32_t height, PixelFormat form
     if (buffercount)
         config_->at(0).bufferCount = buffercount;
     Transform transform = Transform::Identity;
-    bool ok;
-    Transform rot = transformFromRotation(rotation, &ok);
-    if (!ok)
-        throw std::runtime_error("illegal rotation value, Please use 0 or 180");
-    transform = rot * transform;
-    if (!!(transform & Transform::Transpose))
-        throw std::runtime_error("transforms requiring transpose not supported");
-    config_->transform = transform;
+    switch(rotation) {
+        case 0: config_->orientation = libcamera::Orientation::Rotate0; break;
+        case 90: config_->orientation = libcamera::Orientation::Rotate90; break;
+        case 180: config_->orientation = libcamera::Orientation::Rotate180; break;
+        case 270: config_->orientation = libcamera::Orientation::Rotate270; break;
+        default: throw std::runtime_error("illegal rotation value. Only 0, 90, 180 and 270 are supported.");
+    }
 
     CameraConfiguration::Status validation = config_->validate();
 	if (validation == CameraConfiguration::Invalid)
