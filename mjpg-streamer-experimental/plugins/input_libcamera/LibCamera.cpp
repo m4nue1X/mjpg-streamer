@@ -41,7 +41,6 @@ void LibCamera::configureStill(uint32_t width, uint32_t height, PixelFormat form
     config_->at(0).pixelFormat = format;
     if (buffercount)
         config_->at(0).bufferCount = buffercount;
-    Transform transform = Transform::Identity;
     switch(rotation) {
         case 0: config_->orientation = libcamera::Orientation::Rotate0; break;
         case 90: config_->orientation = libcamera::Orientation::Rotate90; break;
