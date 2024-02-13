@@ -394,6 +394,14 @@ void update_client_timestamp(client_info *client)
 }
 #endif
 
+void increment_client_count(input* in) {
+    __atomic_add_fetch(&in->n_clients, 1, __ATOMIC_SEQ_CST);
+}
+
+void decrement_client_count(input* in) {
+    __atomic_sub_fetch(&in->n_clients, 1, __ATOMIC_SEQ_CST);
+}
+
 /******************************************************************************
 Description.: Send a complete HTTP response and a single JPG-frame.
 Input Value.: fildescriptor fd to send the answer to
@@ -407,6 +415,7 @@ void send_snapshot(cfd *context_fd, int input_number)
     struct timeval timestamp;
 
     pglobal->in[input_number].snapshot = 1;
+    increment_client_count(&pglobal->in[input_number]);
 
     /* wait for a fresh frame */
     pthread_mutex_lock(&pglobal->in[input_number].db);
@@ -420,6 +429,7 @@ void send_snapshot(cfd *context_fd, int input_number)
         free(frame);
         pthread_mutex_unlock(&pglobal->in[input_number].db);
         send_error(context_fd->fd, 500, "not enough memory");
+        decrement_client_count(&pglobal->in[input_number]);
         return;
     }
     /* copy v4l2_buffer timeval to user space */
@@ -446,9 +456,11 @@ void send_snapshot(cfd *context_fd, int input_number)
     if (write(context_fd->fd, buffer, strlen(buffer)) < 0 ||
         write(context_fd->fd, frame, frame_size) < 0) {
         free(frame);
+        decrement_client_count(&pglobal->in[input_number]);
         return;
     }
 
+    decrement_client_count(&pglobal->in[input_number]);
     free(frame);
 }
 
@@ -479,6 +491,7 @@ void send_stream(cfd *context_fd, int input_number)
 
     DBG("Headers send, sending stream now\n");
 
+    increment_client_count(&pglobal->in[input_number]);
     while(!pglobal->stop) {
 
         /* wait for fresh frames */
@@ -497,6 +510,7 @@ void send_stream(cfd *context_fd, int input_number)
                 free(frame);
                 pthread_mutex_unlock(&pglobal->in[input_number].db);
                 send_error(context_fd->fd, 500, "not enough memory");
+                decrement_client_count(&pglobal->in[input_number]);
                 return;
             }
 
@@ -534,6 +548,7 @@ void send_stream(cfd *context_fd, int input_number)
         sprintf(buffer, "\r\n--" BOUNDARY "\r\n");
         if(write(context_fd->fd, buffer, strlen(buffer)) < 0) break;
     }
+    decrement_client_count(&pglobal->in[input_number]);
 
     free(frame);
 }
@@ -582,6 +597,7 @@ void send_stream_wxp(cfd *context_fd, int input_number)
 
     DBG("Headers send, sending stream now\n");
 
+    increment_client_count(&pglobal->in[input_number]);
     while(!pglobal->stop) {
 
         /* wait for fresh frames */
@@ -600,6 +616,7 @@ void send_stream_wxp(cfd *context_fd, int input_number)
                 free(frame);
                 pthread_mutex_unlock(&pglobal->in[input_number].db);
                 send_error(context_fd->fd, 500, "not enough memory");
+                decrement_client_count(&pglobal->in[input_number]);
                 return;
             }
 
@@ -626,7 +643,8 @@ void send_stream_wxp(cfd *context_fd, int input_number)
         DBG("sending frame\n");
         if(write(context_fd->fd, frame, frame_size) < 0) break;
     }
-
+    decrement_client_count(&pglobal->in[input_number]);
+    
     free(frame);
 }
 #endif

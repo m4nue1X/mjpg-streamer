@@ -87,7 +87,10 @@ class LibCamera {
         ControlList controls_;
         std::mutex control_mutex_;
         std::mutex camera_stop_mutex_;
-        std::mutex free_requests_mutex_;
+
+        bool waiting_for_frame_{false};
+        std::mutex read_frame_mutex_;
+        std::condition_variable read_frame_condition_;
 
         Stream *viewfinder_stream_ = nullptr;
         std::string cameraId;

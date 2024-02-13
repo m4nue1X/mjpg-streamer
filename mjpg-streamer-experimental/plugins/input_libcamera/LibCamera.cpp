@@ -1,5 +1,7 @@
 #include "LibCamera.h"
 
+#include <chrono>
+
 using namespace std::placeholders;
 
 int LibCamera::initCamera(int cameraIndex) {
@@ -172,7 +174,14 @@ void LibCamera::requestComplete(Request *request) {
 }
 
 void LibCamera::processRequest(Request *request) {
-    requestQueue.push(request);
+    std::unique_lock lock(read_frame_mutex_);
+    if(waiting_for_frame_) {
+        requestQueue.push(request);
+        read_frame_condition_.notify_all();
+    } else {
+        request->reuse(Request::ReuseBuffers);
+        queueRequest(request);
+    }
 }
 
 void LibCamera::returnFrameBuffer(LibcameraOutData frameData) {
@@ -183,8 +192,10 @@ void LibCamera::returnFrameBuffer(LibcameraOutData frameData) {
 }
 
 bool LibCamera::readFrame(LibcameraOutData *frameData){
-    std::lock_guard<std::mutex> lock(free_requests_mutex_);
-    // int w, h, stride;
+    std::unique_lock lock(read_frame_mutex_);
+    waiting_for_frame_ = true;
+    read_frame_condition_.wait_for(lock, std::chrono::milliseconds(100));
+    waiting_for_frame_ = false;
     if (!requestQueue.empty()){
         Request *request = this->requestQueue.front();
 

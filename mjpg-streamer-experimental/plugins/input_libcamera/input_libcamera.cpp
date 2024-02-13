@@ -468,18 +468,23 @@ void *worker_thread(void *arg)
             in->snapshot = 0;
         }
 
-        if (!pctx->camera.readFrame(&frameData))
+        if (!pctx->camera.readFrame(&frameData)) {
+            IPRINT("no frame available\n");
             continue;
-            
-        pthread_mutex_lock(&in->db);
+        }
 
         pctx->videoIn->framebuffer = frameData.imageData;
         pctx->videoIn->formatIn = V4L2_PIX_FMT_RGB24;
-        in->size = compress_image_to_jpeg(pctx->videoIn, in->buf, frameData.size, quality);
-
-        /* signal fresh_frame */
-        pthread_cond_broadcast(&in->db_update);
-        pthread_mutex_unlock(&in->db);
+        IPRINT("number of clients: %d\n", in->n_clients);
+        if(__atomic_load_n(&in->n_clients, __ATOMIC_SEQ_CST) > 0) {
+            pthread_mutex_lock(&in->db);
+            int brightness{0}; 
+            in->size = compress_image_to_jpeg(pctx->videoIn, in->buf, frameData.size, quality, &brightness);
+            IPRINT("brightness: %d\n", brightness);
+            /* signal fresh_frame */
+            pthread_mutex_unlock(&in->db);
+            pthread_cond_broadcast(&in->db_update);
+        }
 
         pctx->camera.returnFrameBuffer(frameData);
         if (is_switch) {

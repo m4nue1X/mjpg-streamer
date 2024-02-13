@@ -139,7 +139,7 @@ Input Value.: video structure from v4l2uvc.c/h, destination buffer and buffersiz
               the buffer must be large enough, no error/size checking is done!
 Return Value: the buffer will contain the compressed data
 ******************************************************************************/
-int compress_image_to_jpeg(struct vdIn *vd, unsigned char *buffer, int size, int quality)
+int compress_image_to_jpeg(struct vdIn *vd, unsigned char *buffer, int size, int quality, int* brightness)
 {
     struct jpeg_compress_struct cinfo;
     struct jpeg_error_mgr jerr;
@@ -168,6 +168,7 @@ int compress_image_to_jpeg(struct vdIn *vd, unsigned char *buffer, int size, int
     jpeg_start_compress(&cinfo, TRUE);
 
     z = 0;
+    uint64_t brightness_sum = 0; // sum of overall brightness calculated based on luminance which is 0.2126*R + 0.7152*G + 0.0722*B
     if (vd->formatIn == V4L2_PIX_FMT_YUYV) {
         while(cinfo.next_scanline < vd->height) {
             int x;
@@ -193,6 +194,8 @@ int compress_image_to_jpeg(struct vdIn *vd, unsigned char *buffer, int size, int
                 *(ptr++) = (g > 255) ? 255 : ((g < 0) ? 0 : g);
                 *(ptr++) = (b > 255) ? 255 : ((b < 0) ? 0 : b);
 
+                brightness_sum += (213*r + 715*g + 72*b) / 1000; // 1000 = 213+715+72
+
                 if(z++) {
                     z = 0;
                     yuyv += 4;
@@ -211,6 +214,7 @@ int compress_image_to_jpeg(struct vdIn *vd, unsigned char *buffer, int size, int
                 *(ptr++) = yuyv[0];
                 *(ptr++) = yuyv[1];
                 *(ptr++) = yuyv[2];
+                brightness_sum += (213*yuyv[0] + 715*yuyv[1] + 72*yuyv[2]) / 1000;
                 yuyv += 3;
             }
             line_base += vd->stride;
@@ -231,9 +235,17 @@ int compress_image_to_jpeg(struct vdIn *vd, unsigned char *buffer, int size, int
                 b =  ((unsigned char)raw[i] & 31) * 8;
                 */
                 unsigned int twoByte = (yuyv[1] << 8) + yuyv[0];
-                *(ptr++) = (yuyv[1] & 248);
-                *(ptr++) = (unsigned char)((twoByte & 2016) >> 3);
-                *(ptr++) = ((yuyv[0] & 31) * 8);
+                int r, g, b;
+                r = (yuyv[1] & 248);
+                g = (unsigned char)((twoByte & 2016) >> 3);
+                b = ((yuyv[0] & 31) * 8);
+
+                *(ptr++) = r;
+                *(ptr++) = g;
+                *(ptr++) = b;
+
+                brightness_sum += (213*r + 715*g + 72*b) / 1000;
+
                 yuyv += 2;
             }
 
@@ -265,6 +277,8 @@ int compress_image_to_jpeg(struct vdIn *vd, unsigned char *buffer, int size, int
                 *(ptr++) = (g > 255) ? 255 : ((g < 0) ? 0 : g);
                 *(ptr++) = (b > 255) ? 255 : ((b < 0) ? 0 : b);
 
+                brightness_sum += (213*r + 715*g + 72*b) / 1000;
+
                 if(z++) {
                     z = 0;
                     yuyv += 4;
@@ -275,6 +289,10 @@ int compress_image_to_jpeg(struct vdIn *vd, unsigned char *buffer, int size, int
             jpeg_write_scanlines(&cinfo, row_pointer, 1);
         }
     }
+    if(brightness != NULL) {
+        *brightness = brightness_sum / (vd->width*vd->height);
+    }
+
     jpeg_finish_compress(&cinfo);
     jpeg_destroy_compress(&cinfo);
 
