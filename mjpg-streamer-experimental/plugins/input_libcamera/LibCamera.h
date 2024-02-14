@@ -72,7 +72,7 @@ class LibCamera {
 
         unsigned int cameraIndex_;
 	    uint64_t last_;
-        std::unique_ptr<CameraManager> cm;
+        std::unique_ptr<CameraManager> camera_manager_;
         std::shared_ptr<Camera> camera_;
         bool camera_acquired_ = false;
         bool camera_started_ = false;
@@ -82,16 +82,14 @@ class LibCamera {
         // std::map<std::string, Stream *> stream_;
         std::map<int, std::pair<void *, unsigned int>> mappedBuffers_;
 
-        std::queue<Request *> requestQueue;
-
         ControlList controls_;
         std::mutex control_mutex_;
         std::mutex camera_stop_mutex_;
 
-        bool waiting_for_frame_{false};
+        Request* latest_request_{nullptr};
         std::mutex read_frame_mutex_;
         std::condition_variable read_frame_condition_;
 
-        Stream *viewfinder_stream_ = nullptr;
-        std::string cameraId;
+        Stream *viewfinder_stream_{nullptr};
+        std::string camera_id_;
 };
