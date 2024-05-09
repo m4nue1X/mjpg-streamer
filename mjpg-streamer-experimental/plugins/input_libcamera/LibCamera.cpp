@@ -1,25 +1,27 @@
 #include "LibCamera.h"
 
+#include <chrono>
+
 using namespace std::placeholders;
 
 int LibCamera::initCamera(int cameraIndex) {
     int ret;
-    cm = std::make_unique<CameraManager>();
-    ret = cm->start();
+    camera_manager_ = std::make_unique<CameraManager>();
+    ret = camera_manager_->start();
     if (ret){
         std::cout << "Failed to start camera manager: "
               << ret << std::endl;
         return ret;
     }
-    cameraId = cm->cameras()[cameraIndex]->id();
-    camera_ = cm->get(cameraId);
+    camera_id_ = camera_manager_->cameras()[cameraIndex]->id();
+    camera_ = camera_manager_->get(camera_id_);
     if (!camera_) {
-        std::cerr << "Camera " << cameraId << " not found" << std::endl;
+        std::cerr << "Camera " << camera_id_ << " not found" << std::endl;
         return 1;
     }
 
     if (camera_->acquire()) {
-        std::cerr << "Failed to acquire camera " << cameraId
+        std::cerr << "Failed to acquire camera " << camera_id_
               << std::endl;
         return 1;
     }
@@ -28,7 +30,7 @@ int LibCamera::initCamera(int cameraIndex) {
 }
 
 char * LibCamera::getCameraId(){
-    return cameraId.data();
+    return camera_id_.data();
 }
 
 void LibCamera::configureStill(uint32_t width, uint32_t height, PixelFormat format, int buffercount, int rotation) {
@@ -172,7 +174,14 @@ void LibCamera::requestComplete(Request *request) {
 }
 
 void LibCamera::processRequest(Request *request) {
-    requestQueue.push(request);
+    std::unique_lock lock(read_frame_mutex_);
+    if(latest_request_ != nullptr) {
+        latest_request_->reuse(Request::ReuseBuffers);
+        queueRequest(latest_request_);
+    }
+    latest_request_ = request;
+    // call notify even if potentially nobody's waiting for a frame right now
+    read_frame_condition_.notify_all();
 }
 
 void LibCamera::returnFrameBuffer(LibcameraOutData frameData) {
@@ -183,12 +192,12 @@ void LibCamera::returnFrameBuffer(LibcameraOutData frameData) {
 }
 
 bool LibCamera::readFrame(LibcameraOutData *frameData){
-    std::lock_guard<std::mutex> lock(free_requests_mutex_);
-    // int w, h, stride;
-    if (!requestQueue.empty()){
-        Request *request = this->requestQueue.front();
-
-        const Request::BufferMap &buffers = request->buffers();
+    std::unique_lock lock(read_frame_mutex_);
+    if (latest_request_ == nullptr) {
+        read_frame_condition_.wait_for(lock, std::chrono::milliseconds(100));
+    }
+    if (latest_request_ != nullptr){
+        const Request::BufferMap &buffers = latest_request_->buffers();
         for (auto it = buffers.begin(); it != buffers.end(); ++it) {
             FrameBuffer *buffer = it->second;
             for (unsigned int i = 0; i < buffer->planes().size(); ++i) {
@@ -202,8 +211,8 @@ bool LibCamera::readFrame(LibcameraOutData *frameData){
                 frameData->imageData = (uint8_t *)data;
             }
         }
-        this->requestQueue.pop();
-        frameData->request = (uint64_t)request;
+        frameData->request = (uint64_t)latest_request_;
+        latest_request_ = nullptr;
         return true;
     } else {
         Request *request = nullptr;
@@ -235,8 +244,7 @@ void LibCamera::stopCamera() {
         }
         camera_->requestCompleted.disconnect(this, &LibCamera::requestComplete);
     }
-    while (!requestQueue.empty())
-        requestQueue.pop();
+    latest_request_ = nullptr;
 
     for (auto &iter : mappedBuffers_)
 	{
@@ -260,5 +268,5 @@ void LibCamera::closeCamera(){
 
     camera_.reset();
 
-    cm.reset();
+    camera_manager_.reset();
 }

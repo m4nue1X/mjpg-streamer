@@ -69,6 +69,7 @@ struct _input {
     /* signal fresh frames */
     pthread_mutex_t db;
     pthread_cond_t  db_update;
+    int n_clients;
 
     /* global JPG frame, this is more or less the "database" */
     unsigned char *buf;

@@ -298,6 +298,7 @@ int main(int argc, char *argv[])
             closelog();
             exit(EXIT_FAILURE);
         }
+        global.in[i].n_clients = 0;
 
         tmp = (size_t)(strchr(input[i], ' ') - input[i]);
         global.in[i].stop      = 0;
